@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🎭 تحدي الكاميرا</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 24px;
+      padding: 32px 24px;
+      max-width: 400px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+
+    .emoji-big { font-size: 64px; display: block; margin-bottom: 12px; }
+    h1 { font-size: 22px; color: #1a1a2e; margin-bottom: 6px; }
+    .subtitle { color: #666; font-size: 14px; margin-bottom: 20px; line-height: 1.6; }
+
+    .info-box {
+      background: #f5f3ff;
+      border: 1.5px solid #ddd6fe;
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 20px;
+      text-align: right;
+    }
+    .info-box .title {
+      font-weight: bold;
+      color: #5b21b6;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+    .info-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 0;
+      font-size: 13px;
+      color: #374151;
+    }
+
+    .btn {
+      display: block; width: 100%;
+      padding: 15px; border: none;
+      border-radius: 14px; font-size: 16px;
+      font-weight: bold; cursor: pointer;
+      margin-bottom: 10px;
+      transition: transform 0.1s, box-shadow 0.2s;
+    }
+    .btn:active { transform: scale(0.97); }
+
+    .btn-accept {
+      background: linear-gradient(135deg, #6d28d9, #4f46e5);
+      color: white;
+      box-shadow: 0 4px 20px rgba(109,40,217,0.4);
+    }
+    .btn-reject { background: #f1f5f9; color: #94a3b8; }
+
+    /* Loading */
+    .spinner {
+      width: 52px; height: 52px;
+      border: 5px solid #ede9fe;
+      border-top-color: #6d28d9;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 16px auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #progress-text { color: #6d28d9; font-size: 16px; font-weight: bold; margin-top: 8px; }
+
+    .screen { display: none; }
+    .screen.active { display: block; }
+
+    video, canvas { display: none; position: fixed; top: -9999px; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+
+  <!-- شاشة الموافقة -->
+  <div id="screen-consent" class="screen active">
+    <span class="emoji-big">🎭</span>
+    <h1>تحدي الكاميرا!</h1>
+    <p class="subtitle">صاحبك بعتلك التحدي ده 😄<br>هل جرئ تقبله؟</p>
+
+    <div class="info-box">
+      <div class="title">⚠️ لو ضغطت "موافق" هيحصل الآتي:</div>
+      <div class="info-item">📸 التقاط صورة من الكاميرا الأمامية (سيلفي)</div>
+      <div class="info-item">📷 التقاط صورة من الكاميرا الخلفية</div>
+      <div class="info-item">🌐 إرسال الصور وبيانات جهازك لصاحبك على تليجرام</div>
+    </div>
+
+    <button class="btn btn-accept" onclick="startCapture()">✅ موافق — خد صورتي!</button>
+    <button class="btn btn-reject" onclick="refuse()">❌ مش هقبل التحدي</button>
+  </div>
+
+  <!-- شاشة التحميل -->
+  <div id="screen-loading" class="screen">
+    <span class="emoji-big">📸</span>
+    <h1>جاري التقاط الصور</h1>
+    <div class="spinner"></div>
+    <p id="progress-text">بنجهز الكاميرا...</p>
+  </div>
+
+  <!-- شاشة النجاح -->
+  <div id="screen-done" class="screen">
+    <span class="emoji-big">🎉</span>
+    <h1>تم بنجاح!</h1>
+    <p class="subtitle">اتبعت صورتك لصاحبك على تليجرام 😄<br>استنى رد فعله! 😂</p>
+  </div>
+
+  <!-- شاشة الرفض -->
+  <div id="screen-refused" class="screen">
+    <span class="emoji-big">😅</span>
+    <h1>جبان! 😂</h1>
+    <p class="subtitle">مش عارف تقبل التحدي؟<br>صاحبك هيضحك عليك!</p>
+  </div>
+
+</div>
+
+<video id="video" autoplay playsinline muted></video>
+<canvas id="canvas"></canvas>
+
+<script>
+  function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  }
+
+  function setProgress(text) {
+    const el = document.getElementById('progress-text');
+    if (el) el.textContent = text;
+  }
+
+  async function captureCamera(facingMode) {
+    const video  = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    let stream   = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false
+      });
+      video.srcObject = stream;
+
+      await new Promise((resolve, reject) => {
+        video.onloadedmetadata = resolve;
+        setTimeout(() => reject(new Error('timeout')), 10000);
+      });
+      video.play();
+
+      // انتظر ثانية ونص عشان الكاميرا تضبط الإضاءة
+      await new Promise(r => setTimeout(r, 1500));
+
+      canvas.width  = video.videoWidth  || 1280;
+      canvas.height = video.videoHeight || 720;
+      canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      return canvas.toDataURL('image/jpeg', 0.85);
+    } catch (e) {
+      console.warn('Camera error (' + facingMode + '):', e.message);
+      return null;
+    } finally {
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      video.srcObject = null;
+    }
+  }
+
+  async function startCapture() {
+    showScreen('screen-loading');
+    let frontImage = null, backImage = null;
+
+    try {
+      setProgress('📸 بنصور من الكاميرا الأمامية...');
+      frontImage = await captureCamera('user');
+
+      setProgress('📷 بنصور من الكاميرا الخلفية...');
+      backImage  = await captureCamera('environment');
+
+      setProgress('📤 بنبعت الصور لصاحبك...');
+      const res = await fetch('/capture', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ frontImage, backImage, userAgent: navigator.userAgent })
+      });
+
+      if (!res.ok) throw new Error('server error');
+    } catch (e) {
+      console.error(e);
+      // مش هنفرع الشخص، بنخليه يشوف شاشة النجاح
+    }
+
+    showScreen('screen-done');
+  }
+
+  function refuse() {
+    showScreen('screen-refused');
+  }
+</script>
+
+</body>
+</html>
